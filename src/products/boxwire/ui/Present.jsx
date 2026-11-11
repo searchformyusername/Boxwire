@@ -24,11 +24,12 @@ export default function Present({ editor, startAt = 0, onExit }) {
     editor.set({ presenting: true, selection: [], highlight: null, hover: null })
     return () => {
       cancelAnimationFrame(anim.current)
-      editor.set({ presenting: false, view: saved.current })
+      editor.set({ presenting: false, view: saved.current, hover: null })
     }
   }, [editor])
 
   const fly = useCallback((slide) => {
+    editor.set({ hover: null })
     const from = editor.ui.view
     const target = slide ? [slide] : undefined
     editor.zoomToFit(target, { maxZoom: 2.5, pad: 56 })

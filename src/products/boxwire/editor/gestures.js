@@ -302,6 +302,7 @@ export function createPointer(editor, { onLaserChange } = {}) {
       return pan(sp)
     }
     if (tool === 'laser') return laserGesture(sp)
+    if (editor.ui.presenting) return null
     if (tool === 'pen') return pen(sp)
     if (tool === 'eraser') return eraser(sp)
     if (tool === 'text') {
@@ -342,6 +343,7 @@ export function createPointer(editor, { onLaserChange } = {}) {
     const { tool } = editor.ui
     if (space || tool === 'hand') return 'grab'
     if (tool === 'laser') return 'none'
+    if (editor.ui.presenting) return 'default'
     if (tool === 'text') return 'text'
     if (tool !== 'select') return 'crosshair'
     const frame = selectionFrame(editor)
@@ -384,6 +386,13 @@ export function createPointer(editor, { onLaserChange } = {}) {
         gesture.move(sp, e)
         return gesture.cursor
       }
+      if (editor.ui.presenting) {
+        const el = editor.hitTest(editor.toWorld(sp))
+        const id = isEdge(el) ? el.id : null
+        if (id !== editor.ui.hover) editor.set({ hover: id })
+        if (editor.ui.tool === 'laser' && !space) moveLaser(sp)
+        return cursorAt(sp)
+      }
       if (editor.ui.tool === 'laser' && !space) {
         moveLaser(sp)
         return 'none'
@@ -413,7 +422,7 @@ export function createPointer(editor, { onLaserChange } = {}) {
       if (!gesture && editor.ui.hover) editor.set({ hover: null })
     },
     doubleClick(sp) {
-      if (editor.ui.tool === 'laser') return
+      if (editor.ui.presenting || editor.ui.tool === 'laser') return
       const p = editor.toWorld(sp)
       const el = editor.hitTest(p)
       if (el && el.type !== 'stroke') return editor.startEdit(el.id)

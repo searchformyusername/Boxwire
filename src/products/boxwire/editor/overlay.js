@@ -1,4 +1,4 @@
-// Editor-only chrome drawn over the scene: grid, selection, handles, ports,
+// Transient chrome drawn over the scene: grid, selection, handles, ports,
 // snap guides, marquee and previews. Never exported.
 
 import { createRouter, routingObstacles } from '../core/edges.js'
@@ -78,7 +78,12 @@ export function drawChrome(ctx, editor, theme) {
 
   // hover + bind target
   const hover = editor.get(ui.hover)
-  if (hover && !ui.selection.includes(hover.id) && !ui.draft) outline(hover, theme.accentHover, 1.5)
+  if (hover && !ui.selection.includes(hover.id) && !ui.draft && (!ui.presenting || isEdge(hover))) outline(hover, theme.accentHover, 1.5)
+  // Presentations retain connector hover, without selection handles, ports or other editing chrome.
+  if (ui.presenting) {
+    ctx.restore()
+    return
+  }
   const bind = editor.get(ui.bindTarget)
   if (bind) outline(bind, accent, 2.5, 4)
 

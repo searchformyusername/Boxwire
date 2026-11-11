@@ -48,11 +48,9 @@ export default function Canvas({ editor, pointerRef }) {
       drawScene(ctx, { elements, routes, theme, fx, editing: editor.ui.editing, view: editor.viewRect() })
       drawDraft(ctx, editor, theme)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      if (!presenting) {
-        drawFrames(ctx, editor, theme)
-        drawChrome(ctx, editor, theme)
-        if (editor.ui.highlight || editor.ui.showLoad) drawReview(ctx, editor, theme, reviewDoc(editor.store.committedDoc))
-      }
+      if (!presenting) drawFrames(ctx, editor, theme)
+      drawChrome(ctx, editor, theme)
+      if (!presenting && (editor.ui.highlight || editor.ui.showLoad)) drawReview(ctx, editor, theme, reviewDoc(editor.store.committedDoc))
       scheduleLaser()
     }
     const schedule = () => {
