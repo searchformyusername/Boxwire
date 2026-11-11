@@ -1,0 +1,44 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "File sync (Dropbox-style)",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- sync files across devices\n- offline edits; conflicts kept\n  as a conflicted copy\n- 50M DAU of 500M users\n- 2 changes/user/day: 2.3k/s\n- 20 syncs/user/day: 23k/s (2×)\n- 4 MB blocks, SHA-256 dedupe:\n  ~100 KB new bytes per change\n- ≈ 3.7 PB/y of new blocks" },
+    { "id": "client", "kind": "web-client", "icon": "drive", "label": "Sync client\n(desktop, mobile)", "capacity": { "dau": 50000000, "writesPerUser": 2, "readsPerUser": 20, "peak": 2, "writeKB": 100, "readKB": 50 } },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "replicas": 2, "qpsPerNode": 50000 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway (OAuth)", "capacity": { "replicas": 3, "qpsPerNode": 20000, "auth": true } },
+    { "id": "blocksvc", "kind": "service", "label": "Block service\n(which blocks missing?)", "capacity": { "replicas": 4, "qpsPerNode": 2000 } },
+    { "id": "index", "kind": "nosql-store", "label": "Block index\n(sha256 → S3 key)", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "blocks", "kind": "object-storage", "label": "Block store (S3)", "capacity": { "retentionYears": 5, "replicationFactor": 1, "storageTB": 40000 } },
+    { "id": "meta", "kind": "service", "label": "Metadata service\n(commit block lists)", "capacity": { "replicas": 8, "qpsPerNode": 5000 } },
+    { "id": "mcache", "kind": "cache", "label": "Metadata cache (Redis)", "capacity": { "replicas": 2, "shards": 4, "qpsPerNode": 100000, "hitRatio": 0.9, "ttlSec": 3600 } },
+    { "id": "mdb", "kind": "sql-database", "label": "File metadata (MySQL)\nsharded by namespace", "capacity": { "replicas": 3, "shards": 16, "qpsPerNode": 5000 } },
+    { "id": "changes", "kind": "event-stream", "label": "Kafka: namespace changes", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "notifier", "kind": "service", "label": "Notifier (long-poll)", "capacity": { "replicas": 40, "qpsPerNode": 2000 } },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (block downloads)" },
+    { "id": "whole", "kind": "worker", "label": "Re-upload whole file/edit", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- bytes go client ↔ S3 via\n  pre-signed URLs, never app\n  servers\n- block-level dedupe: edits\n  upload changed blocks only\n- MySQL for metadata: atomic\n  commit of a file version\n- long-poll: no per-device push" }
+  ],
+  "edges": [
+    { "from": "client", "to": "lb", "label": "HTTPS" },
+    { "from": "lb", "to": "gw" },
+    { "from": "gw", "to": "blocksvc", "carries": "writes" },
+    { "from": "blocksvc", "to": "index" },
+    { "from": "client", "to": "blocks", "label": "PUT blocks", "carries": "writes" },
+    { "from": "gw", "to": "meta" },
+    { "from": "meta", "to": "mcache" },
+    { "from": "meta", "to": "mdb" },
+    { "from": "meta", "to": "changes", "kind": "async", "carries": "writes" },
+    { "from": "changes", "to": "notifier" },
+    { "from": "gw", "to": "notifier", "label": "long-poll", "carries": "reads" },
+    { "from": "client", "to": "cdn", "carries": "reads" },
+    { "from": "cdn", "to": "blocks" }
+  ],
+  "frames": [
+    { "id": "f-edge", "label": "1 · Blocks go straight to storage", "contains": ["client", "lb", "gw", "blocks", "cdn"] },
+    { "id": "f-commit", "label": "2 · + Dedupe blocks, commit the version", "contains": ["client", "lb", "gw", "blocksvc", "index", "blocks", "meta", "mcache", "mdb", "changes", "cdn"] },
+    { "id": "f-notify", "label": "3 · + Other devices hear and download", "contains": ["client", "lb", "gw", "blocksvc", "index", "blocks", "meta", "mcache", "mdb", "changes", "notifier", "cdn"] },
+    { "id": "f-all", "label": "4 · Whole design", "contains": ["req", "client", "lb", "gw", "blocksvc", "index", "blocks", "meta", "mcache", "mdb", "changes", "notifier", "cdn", "whole", "trade"] }
+  ]
+}

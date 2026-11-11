@@ -1,0 +1,37 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "URL shortener",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- POST /shorten → 7-char code\n- GET /{code} → 302, p99 < 50 ms\n- custom alias, expiry optional\n- 100M new URLs/mo, 100:1 reads\n- 77 writes/s, 7.7k reads/s (2×)\n- 6B links in 5 y × 0.5 KB\n- ≈ 3 TB raw, 9 TB at RF 3" },
+    { "id": "client", "kind": "web-client", "label": "Clients", "capacity": { "writesPerMonth": 100000000, "readWrite": 100, "peak": 2, "writeKB": 0.5, "readKB": 0.5 } },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "replicas": 2, "qpsPerNode": 50000 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway\n(API keys for create)", "capacity": { "replicas": 2, "qpsPerNode": 20000, "auth": true } },
+    { "id": "api", "kind": "service", "label": "Shortener API", "capacity": { "replicas": 3, "qpsPerNode": 5000 } },
+    { "id": "kgs", "kind": "service", "label": "Key generator\n(base62 batches)", "icon": "key", "color": "teal", "capacity": { "replicas": 2, "qpsPerNode": 2000 } },
+    { "id": "cache", "kind": "cache", "label": "Redis (hot links)", "capacity": { "replicas": 2, "shards": 1, "qpsPerNode": 100000, "hitRatio": 0.9, "ttlSec": 86400 } },
+    { "id": "db", "kind": "nosql-store", "label": "URL store\n(DynamoDB: code → url)", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 5000, "retentionYears": 5, "replicationFactor": 3, "storageTB": 20 } },
+    { "id": "clicks", "kind": "event-stream", "label": "Kafka: click events", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "worker", "kind": "worker", "label": "Analytics worker", "capacity": { "replicas": 2, "qpsPerNode": 10000 } },
+    { "id": "wh", "kind": "data-warehouse", "label": "Warehouse", "capacity": { "managed": true } },
+    { "id": "seq", "kind": "sql-database", "label": "Counter in one SQL row", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- pre-made keys: no collisions,\n  no hot counter row\n- 302 + async clicks, not 301\n  (301 is cached, uncountable)\n- KV by code: single-key reads\n  shard cleanly; no joins" }
+  ],
+  "edges": [
+    { "from": "client", "to": "lb", "label": "HTTPS" },
+    { "from": "lb", "to": "gw" },
+    { "from": "gw", "to": "api" },
+    { "from": "api", "to": "cache", "label": "get / set", "carries": "reads" },
+    { "from": "api", "to": "db", "label": "on miss" },
+    { "from": "api", "to": "kgs", "label": "claim keys", "carries": "writes" },
+    { "from": "api", "to": "clicks", "kind": "async", "label": "click", "carries": "reads" },
+    { "from": "clicks", "to": "worker" },
+    { "from": "worker", "to": "wh" }
+  ],
+  "frames": [
+    { "id": "f-read", "label": "1 · Redirect: cache first, DB on miss", "contains": ["client", "lb", "gw", "api", "cache", "db"], "padding": 20 },
+    { "id": "f-write", "label": "2 · + Create via key service; queue clicks", "contains": ["client", "lb", "gw", "api", "kgs", "cache", "db", "clicks"] },
+    { "id": "f-analytics", "label": "3 · + Click analytics (whole design)", "contains": ["req", "client", "lb", "gw", "api", "kgs", "cache", "db", "clicks", "worker", "wh", "seq", "trade"] }
+  ]
+}

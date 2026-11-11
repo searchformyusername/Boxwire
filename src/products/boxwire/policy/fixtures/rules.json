@@ -1,0 +1,50 @@
+{
+  "format": "boxwire-rules",
+  "version": 1,
+  "name": "Storefront architecture rules",
+  "rules": [
+    {
+      "id": "no-sync-cycles",
+      "kind": "no-cycle",
+      "edges": "sync",
+      "description": "Services must not call each other in a synchronous loop."
+    },
+    {
+      "id": "public-to-pii-mediated",
+      "kind": "no-path",
+      "from": { "trust": ["public"] },
+      "to": { "meta": { "data": "pii" } },
+      "unless": { "through": { "kind": ["api-gateway", "auth-service"] } },
+      "description": "Anything on the public internet reaches customer data only through the gateway."
+    },
+    {
+      "id": "data-does-not-call-services",
+      "kind": "forbid-edge",
+      "from": { "role": ["store", "cache"] },
+      "to": { "role": ["compute"] }
+    },
+    {
+      "id": "layer-order",
+      "kind": "layers",
+      "order": [
+        { "role": ["client"] },
+        { "role": ["edge"] },
+        { "role": ["compute", "auth", "queue"] },
+        { "role": ["store", "cache"] }
+      ]
+    },
+    {
+      "id": "owned",
+      "kind": "require",
+      "of": { "role": ["compute", "store"] },
+      "fields": ["meta.owner"],
+      "severity": "warning"
+    },
+    {
+      "id": "sensitive-stores-replicated",
+      "kind": "require",
+      "of": { "trust": ["sensitive"], "role": ["store"] },
+      "fields": ["capacity.replicas"]
+    }
+  ]
+}

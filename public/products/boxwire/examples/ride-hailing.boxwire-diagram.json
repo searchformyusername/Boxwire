@@ -1,0 +1,47 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Ride hailing (Uber-style)",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- rider sees ETA, requests ride\n- match a near driver in < 1 s\n- live tracking during trip\n- 20M riders: 30M writes/day\n- rider reads 28k/s (3× peak)\n- 3M drivers ping every 4 s:\n  312k location writes/s (2×)\n- one driver, one trip (ACID)" },
+    { "id": "rider", "kind": "mobile-app", "label": "Rider app", "capacity": { "dau": 20000000, "writesPerUser": 1.5, "readsPerUser": 40, "peak": 3, "writeKB": 2, "readKB": 2 } },
+    { "id": "driver", "kind": "mobile-app", "label": "Driver app", "capacity": { "dau": 3000000, "writesPerUser": 4500, "readsPerUser": 200, "peak": 2, "writeKB": 0.1, "readKB": 1 } },
+    { "id": "apigw", "kind": "api-gateway", "label": "API gateway (OAuth)", "capacity": { "replicas": 4, "qpsPerNode": 20000, "auth": true } },
+    { "id": "dgw", "kind": "api-gateway", "label": "Driver WebSocket gateway", "capacity": { "replicas": 60, "qpsPerNode": 10000, "auth": true } },
+    { "id": "location", "kind": "service", "label": "Location service", "capacity": { "replicas": 40, "qpsPerNode": 10000 } },
+    { "id": "geo", "kind": "cache", "label": "Live locations\n(Redis GEO by H3 cell)", "capacity": { "replicas": 2, "shards": 16, "qpsPerNode": 100000, "hitRatio": 1, "ttlSec": 30 } },
+    { "id": "pings", "kind": "event-stream", "label": "Kafka: driver pings", "capacity": { "replicas": 3, "shards": 64, "qpsPerNode": 10000 } },
+    { "id": "archiver", "kind": "worker", "label": "Trace archiver\n(batch → Parquet)", "capacity": { "replicas": 16, "qpsPerNode": 25000 } },
+    { "id": "traces", "kind": "object-storage", "label": "Trip traces (S3)", "capacity": { "retentionYears": 2, "replicationFactor": 1, "storageTB": 2000 } },
+    { "id": "trip", "kind": "service", "label": "Trip service\n(state machine)", "capacity": { "replicas": 12, "qpsPerNode": 5000 } },
+    { "id": "trips", "kind": "sql-database", "label": "Trips (Postgres)\nsharded by city", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 5000, "retentionYears": 5, "replicationFactor": 3, "storageTB": 1000 } },
+    { "id": "match", "kind": "service", "label": "Matching / dispatch", "capacity": { "replicas": 6, "qpsPerNode": 1000 } },
+    { "id": "maps", "kind": "external-api", "label": "Routing / ETA engine" },
+    { "id": "psp", "kind": "payments", "label": "Payments (Stripe)" },
+    { "id": "scan", "kind": "sql-database", "label": "SQL lat/lng BETWEEN scan", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- live locations in Redis GEO,\n  TTL 30 s: no DB write/ping\n- Kafka carries pings to the\n  archive + surge, off-path\n- Postgres for trip state: one\n  driver ↔ one trip, ACID\n- offers pushed over driver WS" }
+  ],
+  "edges": [
+    { "from": "driver", "to": "dgw", "label": "WSS" },
+    { "from": "dgw", "to": "location", "label": "ping", "carries": "writes" },
+    { "from": "location", "to": "geo", "carries": "writes" },
+    { "from": "location", "to": "pings", "kind": "async", "carries": "writes" },
+    { "from": "pings", "to": "archiver" },
+    { "from": "archiver", "to": "traces" },
+    { "from": "rider", "to": "apigw", "label": "HTTPS" },
+    { "from": "apigw", "to": "trip" },
+    { "from": "dgw", "to": "trip", "carries": "reads" },
+    { "from": "trip", "to": "trips" },
+    { "from": "trip", "to": "match", "label": "request", "carries": "writes" },
+    { "from": "match", "to": "geo", "label": "nearby", "carries": "lookups" },
+    { "from": "match", "to": "maps", "label": "ETA", "carries": "lookups" },
+    { "from": "match", "to": "dgw", "kind": "async", "label": "offer" },
+    { "from": "trip", "to": "psp", "carries": "writes" }
+  ],
+  "frames": [
+    { "id": "f-match", "label": "1 · Request, match, offer to a driver", "contains": ["rider", "driver", "apigw", "dgw", "trip", "trips", "match", "maps", "psp"], "padding": 24 },
+    { "id": "f-ingest", "label": "2 · + Location ingest: geo index, archive", "contains": ["rider", "driver", "apigw", "dgw", "location", "geo", "pings", "archiver", "traces", "trip", "trips", "match", "maps", "psp"] },
+    { "id": "f-all", "label": "3 · Whole design", "contains": ["req", "rider", "driver", "apigw", "dgw", "location", "geo", "pings", "archiver", "traces", "trip", "trips", "match", "maps", "psp", "scan", "trade"] }
+  ]
+}

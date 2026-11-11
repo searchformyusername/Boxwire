@@ -1,0 +1,70 @@
+// Storefront: proposed change (written by an agent against the baseline above).
+// Rules: policy/fixtures/rules.json. Comments like these survive every edit.
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Storefront",
+  "direction": "LR",
+  "nodes": [
+    // Clients and the edge tier: everything here faces the public internet.
+    { "id": "web", "kind": "web-client", "label": "Web storefront" },
+    { "id": "mobile", "kind": "mobile-app", "label": "Mobile app" },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (static assets)" },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway", "capacity": { "replicas": 3, "auth": true }, "meta": { "owner": "platform" } },
+    { "id": "auth", "kind": "auth-service", "label": "Auth service", "capacity": { "replicas": 2 }, "meta": { "owner": "identity" } },
+    // Services. Owners are declared so the review can check them.
+    { "id": "catalog", "kind": "service", "label": "Product catalog", "capacity": { "replicas": 2 }, "meta": { "owner": "catalog" } },
+    { "id": "reco", "kind": "service", "label": "Recommendations", "capacity": { "replicas": 2 }, "meta": { "owner": "growth" } },
+    { "id": "cache", "kind": "cache", "label": "Catalog cache", "capacity": { "ttlSec": 300 }, "meta": { "owner": "catalog" }, "color": "orange" },
+    { "id": "orders", "kind": "service", "label": "Order service", "capacity": { "replicas": 3 }, "meta": { "owner": "checkout" } },
+    { "id": "inventory", "kind": "service", "label": "Inventory service", "capacity": { "replicas": 2 }, "meta": { "owner": "fulfilment" } },
+    { "id": "payments", "kind": "service", "label": "Payment service", "capacity": { "replicas": 2 }, "meta": { "owner": "checkout" } },
+    { "id": "psp", "kind": "payments", "label": "PSP (Stripe)" },
+    /* Data. The customer DB holds PII (meta.data), so the rules require
+       every public path to it to pass through the gateway. */
+    { "id": "ordersdb", "kind": "sql-database", "label": "Orders DB", "capacity": { "replicas": 3 }, "meta": { "owner": "checkout" } },
+    { "id": "events", "kind": "event-stream", "label": "Order events" },
+    { "id": "notifier", "kind": "worker", "label": "Notifier", "capacity": { "replicas": 2 }, "meta": { "owner": "growth" } },
+    { "id": "email", "kind": "email-sms", "label": "Email / SMS" },
+    { "id": "profile", "kind": "service", "label": "Profile service", "capacity": { "replicas": 2 }, "meta": { "owner": "identity" } },
+    { "id": "users", "kind": "sql-database", "label": "Customer DB", "capacity": { "replicas": 3 }, "meta": { "owner": "identity", "data": "pii" } }
+  ],
+  // Request flow. Solid arrows are synchronous calls; "async" is a queue or event.
+  "edges": [
+    { "from": "web", "to": "cdn", "carries": "reads" },
+    { "from": "web", "to": "gw" },
+    { "from": "mobile", "to": "gw" },
+    { "id": "mobile-profile", "from": "mobile", "to": "profile", "label": "avatar fetch" },
+    { "id": "gw-auth", "from": "gw", "to": "auth" },
+    { "from": "gw", "to": "catalog" },
+    { "from": "gw", "to": "orders" },
+    { "from": "gw", "to": "profile" },
+    { "id": "gw-reco", "from": "gw", "to": "reco" },
+    { "id": "e17", "from": "reco", "to": "catalog", "carries": "reads" },
+    { "id": "e7", "from": "catalog", "to": "cache" },
+    { "id": "orders-inventory", "from": "orders", "to": "inventory", "label": "reserve stock" },
+    { "id": "inventory-orders", "from": "inventory", "to": "orders", "label": "stock released" },
+    { "id": "e9", "from": "orders", "to": "payments" },
+    { "id": "e10", "from": "payments", "to": "psp", "label": "charge" },
+    { "id": "e11", "from": "orders", "to": "ordersdb" },
+    { "id": "e12", "from": "orders", "to": "events", "kind": "async" },
+    { "id": "e13", "from": "events", "to": "notifier" },
+    { "id": "e14", "from": "notifier", "to": "email" },
+    { "id": "e15", "from": "notifier", "to": "profile", "carries": "reads" },
+    { "id": "e16", "from": "profile", "to": "users" }
+  ],
+  // Declared trust boundaries (public / internal / sensitive).
+  "zones": [
+    { "id": "public", "label": "Public internet", "trust": "public", "contains": ["web", "mobile", "cdn"] },
+    { "id": "core", "label": "Core services", "trust": "internal", "contains": ["gw", "auth", "catalog", "reco", "cache", "orders", "inventory", "payments", "ordersdb", "events", "notifier"] },
+    { "id": "pii", "label": "Customer data", "trust": "sensitive", "contains": ["profile", "users"] }
+  ],
+  "frames": [
+    { "id": "f-checkout", "label": "Checkout path (v2)", "contains": ["gw", "orders", "payments", "psp"] }
+  ],
+  // Hand-placed nodes; everything else is laid out automatically.
+  "positions": {
+    "gw": { "x": 440, "y": 160 },
+    "cdn": { "x": 200, "y": 40 }
+  }
+}

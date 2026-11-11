@@ -1,0 +1,50 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Payment system",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- charge, refund, status\n- one effect per idempotency key\n- never lose or double-charge\n- 10M payments/day: 347/s (3×)\n- reads 5:1 (status polling)\n- ledger: 2 entries per payment\n- keep 7 years (compliance)\n- p99 < 2 s including the PSP" },
+    { "id": "client", "kind": "web-client", "label": "Checkout / merchants", "capacity": { "writesPerDay": 10000000, "readWrite": 5, "peak": 3, "writeKB": 1, "readKB": 1 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway\n(API keys, mTLS)", "capacity": { "replicas": 3, "qpsPerNode": 10000, "auth": true } },
+    { "id": "pay", "kind": "service", "label": "Payment service\n(state machine)", "capacity": { "replicas": 4, "qpsPerNode": 1000 } },
+    { "id": "paydb", "kind": "sql-database", "label": "Payments (Postgres)\nUNIQUE idempotency key", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 3000, "retentionYears": 7, "replicationFactor": 3, "storageTB": 500 } },
+    { "id": "risk", "kind": "service", "label": "Risk / fraud scoring", "icon": "shield", "capacity": { "replicas": 3, "qpsPerNode": 500 } },
+    { "id": "exec", "kind": "service", "label": "PSP executor\n(retries, timeouts)", "capacity": { "replicas": 3, "qpsPerNode": 500 } },
+    { "id": "psp", "kind": "payments", "label": "PSP (Stripe / Adyen)" },
+    { "id": "hook", "kind": "service", "label": "PSP webhook receiver\n(verify signature)", "capacity": { "replicas": 3, "qpsPerNode": 1000 } },
+    { "id": "outbox", "kind": "event-stream", "label": "Kafka: payment events\n(outbox via CDC)", "capacity": { "replicas": 3, "shards": 6, "qpsPerNode": 10000 } },
+    { "id": "ledger", "kind": "worker", "label": "Ledger writer\n(double entry)", "capacity": { "replicas": 3, "qpsPerNode": 1000, "fanout": 2 } },
+    { "id": "ledgerdb", "kind": "sql-database", "label": "Ledger (append-only)", "capacity": { "replicas": 3, "shards": 2, "qpsPerNode": 3000, "retentionYears": 7, "replicationFactor": 3, "storageTB": 1000 } },
+    { "id": "notify", "kind": "worker", "label": "Merchant notifier", "capacity": { "replicas": 3, "qpsPerNode": 1000 } },
+    { "id": "merchant", "kind": "webhook", "label": "Merchant webhooks" },
+    { "id": "recon", "kind": "scheduler", "label": "Reconciliation (nightly)", "capacity": { "replicas": 2 } },
+    { "id": "files", "kind": "object-storage", "label": "Settlement files (S3)" },
+    { "id": "xa", "kind": "service", "label": "2PC (XA) across PSP + DB", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- idempotency key is UNIQUE in\n  the DB: retries are safe\n- outbox + CDC, not 2PC: commit\n  and event can't diverge\n- PSP results can arrive late:\n  webhook + nightly recon\n- SQL for money; ledger is\n  append-only, never updated" }
+  ],
+  "edges": [
+    { "from": "client", "to": "gw", "label": "POST\n/payments" },
+    { "from": "gw", "to": "pay" },
+    { "from": "pay", "to": "paydb" },
+    { "from": "pay", "to": "risk", "carries": "writes" },
+    { "from": "pay", "to": "exec", "carries": "writes" },
+    { "from": "exec", "to": "psp", "label": "charge" },
+    { "from": "psp", "to": "hook", "kind": "async" },
+    { "from": "hook", "to": "paydb", "carries": "writes" },
+    { "from": "paydb", "to": "outbox", "kind": "async", "carries": "writes" },
+    { "from": "outbox", "to": "ledger" },
+    { "from": "ledger", "to": "ledgerdb" },
+    { "from": "outbox", "to": "notify" },
+    { "from": "notify", "to": "merchant" },
+    { "from": "psp", "to": "files", "kind": "async", "carries": "writes" },
+    { "from": "files", "to": "recon", "label": "settlements", "share": 0 },
+    { "from": "ledgerdb", "to": "recon", "share": 0 }
+  ],
+  "frames": [
+    { "id": "f-charge", "label": "1 · Accept and charge (idempotent)", "contains": ["client", "gw", "pay", "risk", "exec", "psp"] },
+    { "id": "f-result", "label": "2 · + PSP result by webhook", "contains": ["client", "gw", "pay", "paydb", "risk", "exec", "psp", "hook", "files"] },
+    { "id": "f-ledger", "label": "3 · + Outbox: ledger, merchant events", "contains": ["client", "gw", "pay", "paydb", "risk", "exec", "psp", "hook", "outbox", "ledger", "ledgerdb", "notify", "merchant", "files"] },
+    { "id": "f-all", "label": "4 · + Nightly reconciliation", "contains": ["req", "client", "gw", "pay", "paydb", "risk", "exec", "psp", "hook", "outbox", "ledger", "ledgerdb", "notify", "merchant", "recon", "files", "xa", "trade"] }
+  ]
+}

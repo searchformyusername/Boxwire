@@ -1,0 +1,53 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Video streaming (YouTube-style)",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- upload, transcode, stream\n- adaptive bitrate (HLS/DASH)\n- start < 2 s, no rebuffering\n- 200M viewers × 10 plays/day\n  = 46k play starts/s (2×)\n- ~94 MB per play → CDN\n  egress ≈ 4 TB/s at peak\n- 500k uploads/day × 50 MB\n  = 25 TB/day raw" },
+    { "id": "viewer", "kind": "web-client", "label": "Player (web, TV, app)", "capacity": { "dau": 200000000, "writesPerUser": 0, "readsPerUser": 10, "peak": 2, "writeKB": 1, "readKB": 2 } },
+    { "id": "creator", "kind": "web-client", "label": "Creator studio", "icon": "image", "capacity": { "writesPerDay": 500000, "readWrite": 20, "peak": 2, "writeKB": 50000, "readKB": 5 } },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (signed URLs)" },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "replicas": 2, "qpsPerNode": 50000 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway (OAuth)", "capacity": { "replicas": 4, "qpsPerNode": 20000, "auth": true } },
+    { "id": "video", "kind": "service", "label": "Video API\n(metadata, manifests)", "capacity": { "replicas": 12, "qpsPerNode": 5000 } },
+    { "id": "mcache", "kind": "cache", "label": "Metadata cache (Redis)", "capacity": { "replicas": 2, "shards": 4, "qpsPerNode": 100000, "hitRatio": 0.95, "ttlSec": 600 } },
+    { "id": "mdb", "kind": "sql-database", "label": "Video metadata\n(MySQL + Vitess)", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 5000 } },
+    { "id": "upload", "kind": "service", "label": "Upload service\n(pre-signed, resumable)", "capacity": { "replicas": 3, "qpsPerNode": 500 } },
+    { "id": "raw", "kind": "object-storage", "label": "Raw uploads (S3)", "capacity": { "retentionYears": 1, "replicationFactor": 1, "storageTB": 20000 } },
+    { "id": "jobs", "kind": "message-queue", "label": "Transcode jobs (SQS)", "capacity": { "managed": true } },
+    { "id": "transcode", "kind": "worker", "label": "Transcoders (GPU)\n6 renditions, 4 s chunks", "capacity": { "replicas": 1500, "qpsPerNode": 0.01 } },
+    { "id": "renditions", "kind": "object-storage", "label": "Renditions (S3, HLS)", "capacity": { "retentionYears": 10, "replicationFactor": 1, "storageTB": 200000 } },
+    { "id": "views", "kind": "event-stream", "label": "Kafka: view events", "capacity": { "replicas": 3, "shards": 16, "qpsPerNode": 10000 } },
+    { "id": "counter", "kind": "worker", "label": "View counter (batched)", "capacity": { "replicas": 8, "qpsPerNode": 10000 } },
+    { "id": "wh", "kind": "data-warehouse", "label": "Analytics (BigQuery)", "capacity": { "managed": true } },
+    { "id": "inline", "kind": "service", "label": "Transcode in upload call", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- CDN serves > 95% of bytes;\n  origin is S3, not app boxes\n- async transcode via queue:\n  upload returns in seconds\n- 4 s segments × 6 renditions:\n  the player adapts bitrate\n- view counts batched, eventual" }
+  ],
+  "edges": [
+    { "from": "creator", "to": "lb" },
+    { "from": "lb", "to": "gw" },
+    { "from": "gw", "to": "upload", "carries": "writes" },
+    { "from": "upload", "to": "mdb", "carries": "writes" },
+    { "from": "creator", "to": "raw", "label": "PUT parts", "carries": "writes" },
+    { "from": "raw", "to": "jobs", "kind": "async", "carries": "writes" },
+    { "from": "jobs", "to": "transcode" },
+    { "from": "transcode", "to": "renditions" },
+    { "from": "transcode", "to": "mdb", "carries": "writes" },
+    { "from": "viewer", "to": "lb", "label": "play" },
+    { "from": "gw", "to": "video", "carries": "reads" },
+    { "from": "video", "to": "mcache" },
+    { "from": "video", "to": "mdb", "carries": "reads" },
+    { "from": "viewer", "to": "cdn", "label": "segments", "carries": "reads" },
+    { "from": "cdn", "to": "renditions" },
+    { "from": "video", "to": "views", "kind": "async", "carries": "reads" },
+    { "from": "views", "to": "counter" },
+    { "from": "counter", "to": "wh" }
+  ],
+  "frames": [
+    { "id": "f-edge", "label": "1 · CDN for segments; parts straight to S3", "contains": ["viewer", "creator", "cdn", "lb", "gw", "raw", "jobs"] },
+    { "id": "f-core", "label": "2 · + Metadata, transcode, renditions", "contains": ["viewer", "creator", "cdn", "lb", "gw", "video", "mcache", "mdb", "upload", "raw", "jobs", "transcode", "renditions", "views"] },
+    { "id": "f-views", "label": "3 · + Count views off the hot path", "contains": ["viewer", "creator", "cdn", "lb", "gw", "video", "mcache", "mdb", "upload", "raw", "jobs", "transcode", "renditions", "views", "counter", "wh"] },
+    { "id": "f-all", "label": "4 · Whole design", "contains": ["req", "viewer", "creator", "cdn", "lb", "gw", "video", "mcache", "mdb", "upload", "raw", "jobs", "transcode", "renditions", "views", "counter", "wh", "inline", "trade"] }
+  ]
+}

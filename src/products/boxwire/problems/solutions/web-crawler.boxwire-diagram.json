@@ -1,0 +1,45 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Web crawler",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- crawl HTML: 1B pages/month\n- polite: robots.txt, ≤ 1 req/s\n  per host; recrawl by freshness\n- skip duplicate URLs + content\n- 386 fetches/s steady, no peak\n- 500 KB/page → 193 MB/s in\n- keep 5 y: ≈ 30 PB raw\n- ~50 links/page, batched" },
+    { "id": "operator", "kind": "user", "label": "Crawl operator\n(seeds, 1B/mo budget)", "capacity": { "writesPerMonth": 500000000, "readWrite": 0, "peak": 1, "writeKB": 500, "readKB": 1 } },
+    { "id": "controller", "kind": "service", "label": "Crawl controller", "capacity": { "replicas": 2, "qpsPerNode": 2000, "auth": true } },
+    { "id": "frontier", "kind": "message-queue", "label": "URL frontier (Kafka)\npriority + per-host", "capacity": { "replicas": 3, "shards": 16, "qpsPerNode": 10000 } },
+    { "id": "sched", "kind": "scheduler", "label": "Recrawl scheduler", "capacity": { "replicas": 2 } },
+    { "id": "fetch", "kind": "worker", "label": "Fetchers (async I/O)\n1 conn per host", "capacity": { "replicas": 20, "qpsPerNode": 50 } },
+    { "id": "dns", "kind": "dns", "label": "DNS resolver (cached)", "capacity": { "replicas": 2, "qpsPerNode": 5000 } },
+    { "id": "robots", "kind": "cache", "label": "robots.txt cache", "capacity": { "replicas": 2, "shards": 1, "qpsPerNode": 100000, "hitRatio": 0.95, "ttlSec": 86400 } },
+    { "id": "web", "kind": "external-api", "label": "The web" },
+    { "id": "seen", "kind": "nosql-store", "label": "Content seen\n(SimHash → url)", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 10000 } },
+    { "id": "raw", "kind": "object-storage", "label": "Raw pages (S3)", "capacity": { "retentionYears": 5, "replicationFactor": 1, "storageTB": 32000 } },
+    { "id": "fetched", "kind": "event-stream", "label": "Kafka: fetched pages", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "parse", "kind": "worker", "label": "Parsers / link extract", "capacity": { "replicas": 10, "qpsPerNode": 100 } },
+    { "id": "urls", "kind": "nosql-store", "label": "URL store (Bigtable)\nseen + next crawl", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "one", "kind": "worker", "label": "One crawler box (BFS)", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- per-host queues: politeness\n  with no global locks\n- content hash dedupe: ~30% of\n  pages are duplicates\n- Kafka between fetch + parse:\n  each tier scales alone\n- BFS + priority, not pure DFS" }
+  ],
+  "edges": [
+    { "from": "operator", "to": "controller", "label": "seeds" },
+    { "from": "controller", "to": "frontier", "kind": "async" },
+    { "from": "sched", "to": "frontier", "kind": "async" },
+    { "from": "frontier", "to": "fetch" },
+    { "from": "fetch", "to": "dns", "carries": "lookups" },
+    { "from": "fetch", "to": "robots", "carries": "lookups" },
+    { "from": "fetch", "to": "web", "label": "GET", "carries": "lookups" },
+    { "from": "fetch", "to": "seen" },
+    { "from": "fetch", "to": "raw", "carries": "writes" },
+    { "from": "fetch", "to": "fetched", "kind": "async" },
+    { "from": "fetched", "to": "parse" },
+    { "from": "parse", "to": "urls", "label": "new links" },
+    { "from": "parse", "to": "frontier", "kind": "async", "share": 0.5 }
+  ],
+  "frames": [
+    { "id": "f-seed", "label": "1 · Seed and schedule the frontier", "contains": ["operator", "controller", "frontier", "sched"] },
+    { "id": "f-fetch", "label": "2 · + Fetch politely, dedupe content", "contains": ["operator", "controller", "frontier", "sched", "fetch", "dns", "robots", "web", "seen", "raw", "fetched"] },
+    { "id": "f-parse", "label": "3 · + Parse, feed new URLs back", "contains": ["operator", "controller", "frontier", "sched", "fetch", "dns", "robots", "web", "seen", "raw", "fetched", "parse", "urls"] },
+    { "id": "f-all", "label": "4 · Whole design", "contains": ["req", "operator", "controller", "frontier", "sched", "fetch", "dns", "robots", "web", "seen", "raw", "fetched", "parse", "urls", "one", "trade"] }
+  ]
+}

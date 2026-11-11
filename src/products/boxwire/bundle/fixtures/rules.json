@@ -1,0 +1,10 @@
+{
+  "format": "boxwire-rules",
+  "version": 1,
+  "rules": [
+    { "id": "no-cycles", "scope": "sync" },
+    { "id": "public-to-sensitive", "from": { "role": "public" }, "to": { "role": "sensitive" } },
+    { "id": "owner-declared" },
+    { "id": "no-dangling" }
+  ]
+}

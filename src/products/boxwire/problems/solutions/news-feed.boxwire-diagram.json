@@ -1,0 +1,45 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "News feed",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- post text + media; follow\n- home feed, newest first\n- feed p99 < 200 ms; eventual\n- 200M DAU: 0.5 posts, 20 reads\n- 3.5k posts/s, 139k reads/s\n- avg 200 followers → 694k\n  timeline writes/s\n- timeline: 500 ids × 8 B/user" },
+    { "id": "client", "kind": "mobile-app", "label": "Mobile / web app", "capacity": { "dau": 200000000, "writesPerUser": 0.5, "readsPerUser": 20, "peak": 3, "writeKB": 1, "readKB": 5 } },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "replicas": 4, "qpsPerNode": 50000 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway (OAuth)", "capacity": { "replicas": 10, "qpsPerNode": 20000, "auth": true } },
+    { "id": "post", "kind": "service", "label": "Post service", "capacity": { "replicas": 4, "qpsPerNode": 2000 } },
+    { "id": "posts", "kind": "nosql-store", "label": "Posts (Cassandra)\nby author_id", "capacity": { "replicas": 3, "shards": 64, "qpsPerNode": 10000, "retentionYears": 3, "replicationFactor": 3, "storageTB": 1000 } },
+    { "id": "events", "kind": "event-stream", "label": "Kafka: post.created", "capacity": { "replicas": 3, "shards": 12, "qpsPerNode": 10000 } },
+    { "id": "fanout", "kind": "worker", "label": "Fan-out workers\n(skip celebs > 10k)", "capacity": { "replicas": 20, "qpsPerNode": 500, "fanout": 200 } },
+    { "id": "graph", "kind": "nosql-store", "label": "Social graph\n(follower lists)", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "timeline", "kind": "cache", "label": "Timeline cache\n(Redis lists, 32 shards)", "capacity": { "replicas": 2, "shards": 32, "qpsPerNode": 100000, "hitRatio": 0.95, "ttlSec": 604800 } },
+    { "id": "feed", "kind": "service", "label": "Feed service\n(merge celeb posts)", "capacity": { "replicas": 40, "qpsPerNode": 5000 } },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (images, video)" },
+    { "id": "media", "kind": "object-storage", "label": "Media (S3)" },
+    { "id": "pull", "kind": "sql-database", "label": "SQL JOIN follows ⋈ posts\non every feed read", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- push for most users: a read\n  is one Redis LRANGE\n- pull for celebrities: no\n  50M-write fan-out per post\n- timelines are rebuildable:\n  Redis + TTL, not durable\n- feed is eventually consistent" }
+  ],
+  "edges": [
+    { "from": "client", "to": "lb", "label": "HTTPS" },
+    { "from": "lb", "to": "gw" },
+    { "from": "gw", "to": "post", "label": "POST /posts", "carries": "writes" },
+    { "from": "post", "to": "posts" },
+    { "from": "post", "to": "events", "kind": "async" },
+    { "from": "events", "to": "fanout" },
+    { "from": "fanout", "to": "graph", "label": "followers", "carries": "lookups" },
+    { "from": "fanout", "to": "timeline", "carries": "writes" },
+    { "from": "gw", "to": "feed", "carries": "reads" },
+    { "from": "feed", "to": "timeline", "carries": "reads" },
+    { "from": "feed", "to": "posts", "label": "celebs, misses", "carries": "reads" },
+    { "from": "client", "to": "media", "label": "pre-signed PUT", "carries": "writes" },
+    { "from": "client", "to": "cdn", "carries": "reads" },
+    { "from": "cdn", "to": "media" }
+  ],
+  "frames": [
+    { "id": "f-edge", "label": "1 · Edge: API gateway, media via CDN", "contains": ["client", "lb", "gw", "cdn", "media"], "padding": 24 },
+    { "id": "f-services", "label": "2 · + Publish and read services", "contains": ["client", "lb", "gw", "post", "posts", "events", "feed", "cdn", "media"] },
+    { "id": "f-fanout", "label": "3 · + Fan-out on write into timelines", "contains": ["client", "lb", "gw", "post", "posts", "events", "fanout", "graph", "timeline", "feed", "cdn", "media"] },
+    { "id": "f-all", "label": "4 · Whole design", "contains": ["req", "client", "lb", "gw", "post", "posts", "events", "fanout", "graph", "timeline", "feed", "cdn", "media", "pull", "trade"] }
+  ]
+}

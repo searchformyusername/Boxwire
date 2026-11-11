@@ -1,0 +1,82 @@
+// Review baseline: the checkout platform, as the team keeps it in the repo.
+/* Hand-placed (manual layout). Most nodes carry their own x/y; the edge tier
+   is pinned from the "positions" block at the end, so a drag there never
+   touches the model above it. */
+{
+  "$schema": "https://gitreset.dev/products/boxwire/schema.json",
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Checkout platform",
+  "layout": "manual",
+
+  "nodes": [
+    // Clients
+    { "id": "web", "kind": "web-client", "label": "Storefront", "x": 0, "y": 160, "capacity": { "dau": 2000000, "readsPerUser": 40, "writesPerUser": 2, "peak": 3 } },
+    { "id": "mobile", "kind": "mobile-app", "x": 0, "y": 320 },
+
+    // Edge tier: placed by "positions"
+    { "id": "cdn", "kind": "cdn" },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "managed": true } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway", "capacity": { "auth": true, "replicas": 2 } },
+    { "id": "auth", "kind": "auth-service", "x": 520, "y": 480 }, // identity provider, out of scope
+
+    // Services
+    {
+      "id": "checkout",
+      "kind": "service",
+      "label": "Checkout API",
+      "x": 780,
+      "y": 160,
+      "capacity": { "replicas": 3, "qpsPerNode": 2000 }, // sized for Black Friday
+      "meta": { "owner": "payments-team", "tier": "1" },
+    },
+    { "id": "catalog", "kind": "service", "label": "Catalog API", "x": 780, "y": 400, "meta": { "owner": "catalog-team" } },
+    { "id": "legacy", "kind": "box", "label": "Legacy monolith", "x": 780, "y": 640 },
+    { "id": "worker", "kind": "worker", "label": "Order worker", "x": 1300, "y": 560 },
+
+    // Data (sensitive zone below)
+    { "id": "orders", "kind": "sql-database", "label": "Orders DB", "x": 1040, "y": 0, "capacity": { "replicas": 2 }, "meta": { "data": "pii" } },
+    { "id": "cache", "kind": "cache", "x": 1040, "y": 240, "capacity": { "ttlSec": 300 } },
+    { "id": "products", "kind": "nosql-store", "label": "Products", "x": 1040, "y": 400 },
+    { "id": "events", "kind": "event-stream", "label": "order.placed", "x": 1040, "y": 560 },
+    { "id": "psp", "kind": "payments", "label": "Card processor", "x": 1300, "y": 0 }
+  ],
+
+  "zones": [
+    { "id": "edge", "label": "Edge", "contains": ["cdn", "lb"], "trust": "public" },
+    { "id": "core", "label": "Core services", "contains": ["checkout", "catalog"], "trust": "internal" },
+    /* PCI scope: anything in here holds card or personal data */
+    { "id": "data", "label": "Data tier", "contains": ["orders", "cache", "products", "events"], "trust": "sensitive", "color": "red" }
+  ],
+
+  "edges": [
+    { "from": "web", "to": "cdn", "label": "static" },
+    { "from": "web", "to": "lb" },
+    { "from": "mobile", "to": "lb" },
+    { "from": "lb", "to": "gw" },
+    { "from": "gw", "to": "auth" },
+    { "from": "gw", "to": "checkout", "label": "POST /checkout" },
+    { "from": "gw", "to": "catalog" },
+    { "from": "checkout", "to": "orders", "carries": "writes" },
+    { "from": "checkout", "to": "psp" },
+    { "id": "placed", "from": "checkout", "to": "events", "kind": "async" },
+    { "from": "events", "to": "worker", "kind": "async" },
+    { "from": "worker", "to": "orders", "carries": "writes" },
+    // read path
+    { "from": "catalog", "to": "cache", "carries": "reads" },
+    { "from": "catalog", "to": "products", "carries": "reads" },
+    { "id": "legacy-writes", "from": "legacy", "to": "orders", "dash": "dotted" }
+  ],
+
+  "frames": [
+    { "id": "f-write", "label": "1 · Write path", "contains": ["web", "lb", "gw", "checkout", "orders"] },
+    { "id": "f-read", "label": "2 · Read path", "contains": ["catalog", "cache", "products"] }
+  ],
+
+  // Layout pins for the edge tier (top-left corners)
+  "positions": {
+    "cdn": { "x": 260, "y": 0 },
+    "lb": { "x": 260, "y": 240 },
+    "gw": { "x": 520, "y": 240, "w": 200 }
+  }
+}

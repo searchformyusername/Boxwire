@@ -1,0 +1,18 @@
+// Checkout, as reviewed last quarter.
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Checkout",
+  "nodes": [
+    { "id": "web", "kind": "web-client", "label": "Web" },
+    { "id": "api", "kind": "api-gateway", "label": "API" },
+    /* orders owns the order lifecycle */
+    { "id": "orders", "kind": "service", "label": "Orders" },
+    { "id": "db", "kind": "sql-database", "label": "Orders DB" }
+  ],
+  "edges": [
+    { "from": "web", "to": "api" },
+    { "from": "api", "to": "orders" },
+    { "from": "orders", "to": "db" } // writes only
+  ]
+}

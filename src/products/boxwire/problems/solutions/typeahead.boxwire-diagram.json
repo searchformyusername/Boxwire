@@ -1,0 +1,42 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Search typeahead",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- top 10 completions per prefix\n- p99 < 100 ms per keystroke\n- rank by popularity, hourly\n- 100M DAU × 6 searches/day\n- ~4 debounced calls/search\n- 56k reads/s, 14k logs/s (2×)\n- ~1B prefixes × 10 × 20 B\n  ≈ 200 GB of top-k lists" },
+    { "id": "client", "kind": "web-client", "label": "Search box", "capacity": { "dau": 100000000, "writesPerUser": 6, "readsPerUser": 24, "peak": 2, "writeKB": 0.1, "readKB": 0.5 } },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (short prefixes)" },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "replicas": 2, "qpsPerNode": 50000 } },
+    { "id": "svc", "kind": "service", "label": "Typeahead service", "capacity": { "replicas": 8, "qpsPerNode": 10000, "public": true } },
+    { "id": "topk", "kind": "cache", "label": "Top-k cache (Redis)\nprefix → 10 queries", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 100000, "hitRatio": 0.98, "ttlSec": 3600 } },
+    { "id": "trie", "kind": "nosql-store", "label": "Trie snapshots (KV)\nprefix → top-k", "capacity": { "replicas": 3, "shards": 2, "qpsPerNode": 5000 } },
+    { "id": "logger", "kind": "service", "label": "Query logger", "capacity": { "replicas": 4, "qpsPerNode": 5000, "public": true } },
+    { "id": "log", "kind": "event-stream", "label": "Kafka: search queries", "capacity": { "replicas": 3, "shards": 8, "qpsPerNode": 10000 } },
+    { "id": "agg", "kind": "worker", "label": "Aggregator (Flink)\n1-min windows", "capacity": { "replicas": 4, "qpsPerNode": 10000, "fanout": 0.02 } },
+    { "id": "counts", "kind": "nosql-store", "label": "Query counts\n(Cassandra, by hour)", "capacity": { "replicas": 3, "shards": 2, "qpsPerNode": 10000, "retentionYears": 1, "replicationFactor": 3, "storageTB": 5 } },
+    { "id": "builder", "kind": "scheduler", "label": "Trie builder (hourly)", "rank": 2, "capacity": { "replicas": 2 } },
+    { "id": "like", "kind": "sql-database", "label": "SQL LIKE 'prefix%'\nper keystroke", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- precompute top-k per prefix:\n  O(1) reads, slower updates\n- hourly rebuild, not per query\n  (trends lag ≤ 1 h)\n- CDN + browser cache short\n  prefixes; debounce 100 ms\n- Flink pre-aggregates: ×0.02" }
+  ],
+  "edges": [
+    { "from": "client", "to": "cdn", "label": "GET ?q=", "carries": "reads" },
+    { "from": "cdn", "to": "lb" },
+    { "from": "client", "to": "lb", "label": "query log", "carries": "writes" },
+    { "from": "lb", "to": "svc", "carries": "reads" },
+    { "from": "svc", "to": "topk" },
+    { "from": "svc", "to": "trie", "label": "miss", "carries": "misses" },
+    { "from": "lb", "to": "logger", "carries": "writes" },
+    { "from": "logger", "to": "log", "kind": "async" },
+    { "from": "log", "to": "agg" },
+    { "from": "agg", "to": "counts" },
+    { "from": "builder", "to": "counts" },
+    { "from": "builder", "to": "trie", "carries": "writes" },
+    { "from": "builder", "to": "topk", "label": "refresh", "carries": "writes" }
+  ],
+  "frames": [
+    { "id": "f-serve", "label": "1 · Serve a keystroke; log the query", "contains": ["client", "cdn", "lb", "svc", "topk", "trie", "logger", "log", "builder"] },
+    { "id": "f-build", "label": "2 · + Aggregate counts; hourly rebuild", "contains": ["client", "cdn", "lb", "svc", "topk", "trie", "logger", "log", "agg", "counts", "builder"] },
+    { "id": "f-all", "label": "3 · Whole design", "contains": ["req", "client", "cdn", "lb", "svc", "topk", "trie", "logger", "log", "agg", "counts", "builder", "like", "trade"] }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Distributed rate limiter",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- limit per API key, user, IP\n- rules: N requests per window\n- 429 + Retry-After header\n- < 2 ms added p99; fail open\n- 20M users × 500 calls/day\n- 347k req/s at 3× peak\n- 20M keys × 2 windows × 100 B\n  ≈ 4 GB of counters" },
+    { "id": "client", "kind": "web-client", "label": "API clients", "capacity": { "dau": 20000000, "writesPerUser": 100, "readsPerUser": 400, "peak": 3, "writeKB": 1, "readKB": 2 } },
+    { "id": "lb", "kind": "load-balancer", "capacity": { "replicas": 8, "qpsPerNode": 50000 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway\n(API key → tenant)", "capacity": { "replicas": 20, "qpsPerNode": 20000, "auth": true } },
+    { "id": "limiter", "kind": "rate-limiter", "label": "Rate limiter\n(sliding window)", "capacity": { "replicas": 20, "qpsPerNode": 25000 } },
+    { "id": "counters", "kind": "cache", "label": "Redis Cluster counters\n(Lua INCR + EXPIRE)", "capacity": { "replicas": 2, "shards": 16, "qpsPerNode": 100000, "hitRatio": 1, "ttlSec": 120 } },
+    { "id": "backend", "kind": "service", "label": "Backend services\n(protected)", "capacity": { "replicas": 80, "qpsPerNode": 5000 } },
+    { "id": "appdb", "kind": "nosql-store", "label": "App data (DynamoDB)", "capacity": { "managed": true, "retentionYears": 1, "replicationFactor": 3 } },
+    { "id": "admin", "kind": "web-client", "label": "Admin console" },
+    { "id": "rulesapi", "kind": "service", "label": "Rules API", "capacity": { "replicas": 2, "qpsPerNode": 500, "auth": true } },
+    { "id": "rulesdb", "kind": "sql-database", "label": "Rules (Postgres)", "capacity": { "replicas": 2 } },
+    { "id": "push", "kind": "config", "label": "Rule push (etcd watch)" },
+    { "id": "sqlctr", "kind": "sql-database", "label": "Counters in SQL\n(row lock per request)", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- sliding-window counter: O(1)\n  memory, ~1% error vs a log\n- central Redis = global limits;\n  Lua keeps INCR atomic\n- fail open if Redis is down:\n  availability over strictness\n- rules cached in process" }
+  ],
+  "edges": [
+    { "from": "client", "to": "lb", "label": "HTTPS" },
+    { "from": "lb", "to": "gw" },
+    { "from": "gw", "to": "limiter" },
+    { "from": "limiter", "to": "counters", "label": "INCR" },
+    { "from": "limiter", "to": "backend", "label": "allowed" },
+    { "from": "backend", "to": "appdb" },
+    { "from": "admin", "to": "rulesapi" },
+    { "from": "rulesapi", "to": "rulesdb" },
+    { "from": "rulesapi", "to": "push", "carries": "writes" },
+    { "from": "push", "to": "limiter", "kind": "async", "label": "rules" }
+  ],
+  "frames": [
+    { "id": "f-front", "label": "1 · Front door, and the rules plane", "contains": ["client", "lb", "gw", "admin", "rulesapi", "rulesdb", "push"] },
+    { "id": "f-check", "label": "2 · + Limiter: shared counters, allowed traffic", "contains": ["client", "lb", "gw", "limiter", "counters", "backend", "appdb", "admin", "rulesapi", "rulesdb", "push"] },
+    { "id": "f-all", "label": "3 · Whole design", "contains": ["req", "client", "lb", "gw", "limiter", "counters", "backend", "appdb", "admin", "rulesapi", "rulesdb", "push", "sqlctr", "trade"] }
+  ]
+}

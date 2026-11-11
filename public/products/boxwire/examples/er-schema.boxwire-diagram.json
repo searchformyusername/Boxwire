@@ -1,0 +1,35 @@
+{
+  "$schema": "https://gitreset.dev/products/boxwire/schema.json",
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Orders schema",
+  "direction": "LR",
+  "nodes": [
+    { "id": "users", "kind": "table", "name": "users", "columns": [
+      { "name": "id", "type": "uuid", "key": "PK" },
+      { "name": "email", "type": "text", "key": "UQ" },
+      { "name": "created_at", "type": "timestamptz" }
+    ] },
+    { "id": "orders", "kind": "table", "name": "orders", "columns": [
+      "id uuid PK",
+      "user_id uuid FK",
+      "status text",
+      "total_cents bigint"
+    ] },
+    { "id": "items", "kind": "table", "name": "order_items", "columns": [
+      { "name": "order_id", "type": "uuid", "key": "PK FK" },
+      { "name": "product_id", "type": "uuid", "key": "PK FK" },
+      { "name": "qty", "type": "int" }
+    ] },
+    { "id": "products", "kind": "table", "name": "products", "columns": [
+      "id uuid PK",
+      "sku text UQ",
+      "price_cents bigint"
+    ] }
+  ],
+  "edges": [
+    { "from": "users", "to": "orders", "kind": "zero-or-many" },
+    { "from": "orders", "to": "items", "kind": "one-to-many" },
+    { "from": "products", "to": "items", "kind": "zero-or-many" }
+  ]
+}

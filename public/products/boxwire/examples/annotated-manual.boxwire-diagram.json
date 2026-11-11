@@ -1,0 +1,29 @@
+{
+  "$schema": "https://gitreset.dev/products/boxwire/schema.json",
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Rate limiter, annotated",
+  "layout": "manual",
+  "nodes": [
+    { "id": "title", "kind": "text", "label": "Rate limiter: token bucket at the edge", "x": 0, "y": -110, "textSize": "l" },
+    { "id": "clients", "kind": "web-client", "label": "Clients", "x": 0, "y": 40 },
+    { "id": "gateway", "kind": "api-gateway", "x": 300, "y": 40 },
+    { "id": "limiter", "kind": "rate-limiter", "label": "Limiter middleware", "x": 300, "y": 240 },
+    { "id": "redis", "kind": "cache", "label": "Redis token buckets", "x": 620, "y": 240 },
+    { "id": "inmem", "kind": "cache", "label": "In-process counters", "x": 620, "y": 400, "crossed": true },
+    { "id": "rules", "kind": "config", "label": "Rules config", "x": 0, "y": 240 },
+    { "id": "backend", "kind": "service", "label": "Backend services", "x": 620, "y": 40 },
+    { "id": "why", "kind": "note", "label": "Per-instance counters undercount across replicas: rejected.", "x": 880, "y": 380, "w": 220, "h": 100 }
+  ],
+  "edges": [
+    { "from": "clients", "to": "gateway" },
+    { "from": "gateway", "to": "limiter", "label": "check(key)", "fromSide": "s", "toSide": "n" },
+    { "from": "limiter", "to": "redis", "label": "EVALSHA" },
+    { "from": "rules", "to": "limiter", "kind": "async", "label": "watch" },
+    { "from": "gateway", "to": "backend", "label": "allowed" },
+    { "from": { "x": 990, "y": 370 }, "to": "inmem", "kind": "flow", "color": "red", "toSide": "e" }
+  ],
+  "strokes": [
+    { "points": [[600, 228], [800, 228], [812, 300], [800, 312], [600, 312], [588, 300], [600, 228]], "color": "green", "width": 3 }
+  ]
+}

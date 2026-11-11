@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "semantic": [
+    { "op": "add", "kind": "node", "id": "pay", "after": { "kind": "payments", "label": "Payments" }, "range": { "file": "proposal", "start": 395, "end": 451 } },
+    { "op": "rename", "kind": "node", "id": "orders", "before": "Orders", "after": "Order service", "range": { "file": "proposal", "start": { "line": 10, "col": 51 }, "end": { "line": 10, "col": 66 } } },
+    { "op": "add", "kind": "edge", "id": "e-pay", "from": "orders", "to": "pay" },
+    { "op": "add", "kind": "edge", "id": "e-back", "from": "pay", "to": "orders", "range": { "file": "proposal", "start": 722, "end": 771 } },
+    { "op": "add", "kind": "edge", "id": "e-short", "from": "web", "to": "db", "range": { "file": "proposal", "start": 777, "end": 823 } }
+  ],
+  "layout": [
+    { "op": "move", "kind": "node", "id": "db", "before": { "x": 760, "y": 40 }, "after": { "x": 980, "y": 40 } }
+  ],
+  "rules": [
+    {
+      "id": "no-cycles:orders",
+      "rule": "no-cycles",
+      "ruleVersion": 1,
+      "status": "violation",
+      "severity": "error",
+      "message": "orders and pay call each other synchronously.",
+      "witness": ["orders", "pay", "orders"],
+      "ranges": [{ "file": "proposal", "start": 722, "end": 771 }]
+    },
+    {
+      "id": "public-to-sensitive:web-db",
+      "rule": "public-to-sensitive",
+      "ruleVersion": 1,
+      "status": "violation",
+      "severity": "error",
+      "message": "A public client reaches a sensitive store without a mediating service.",
+      "witness": { "path": ["web", "db"] },
+      "ranges": [{ "file": "proposal", "start": { "line": 20, "col": 5 }, "end": { "line": 20, "col": 51 } }]
+    },
+    { "id": "owner-declared:pay", "rule": "owner-declared", "ruleVersion": 1, "status": "unknown", "severity": "info", "message": "pay has no declared owner." },
+    { "id": "no-dangling", "rule": "no-dangling", "ruleVersion": 1, "status": "pass", "severity": "error", "message": "Every edge endpoint exists." }
+  ],
+  "conflicts": [
+    { "path": "nodes.orders.label", "message": "Both sides renamed orders.", "base": "Orders", "ours": "Order API", "proposal": "Order service" }
+  ]
+}

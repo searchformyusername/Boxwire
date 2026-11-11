@@ -1,0 +1,45 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Chat (WhatsApp-style)",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- 1:1 + groups (≤ 256 people)\n- online delivery < 500 ms\n- offline: push, sync on open\n- order per chat, at-least-once\n- 100M DAU × 50 msgs = 5B/day\n- 116k sends/s, 46k syncs/s\n- 50M sockets ≈ 500 servers\n- keep 1 y: ≈ 1 PB at RF 3" },
+    { "id": "client", "kind": "mobile-app", "label": "Mobile app", "capacity": { "dau": 100000000, "writesPerUser": 50, "readsPerUser": 20, "peak": 2, "writeKB": 0.2, "readKB": 2 } },
+    { "id": "lb", "kind": "load-balancer", "label": "L4 load balancer", "capacity": { "replicas": 4, "qpsPerNode": 50000 } },
+    { "id": "ws", "kind": "api-gateway", "label": "WebSocket gateway\n(token auth, 100k conns)", "capacity": { "replicas": 500, "qpsPerNode": 2000, "auth": true } },
+    { "id": "msg", "kind": "service", "label": "Message service\n(seq ids per chat)", "capacity": { "replicas": 50, "qpsPerNode": 5000 } },
+    { "id": "store", "kind": "nosql-store", "label": "Messages (Cassandra)\nby (chat_id, day)", "capacity": { "replicas": 3, "shards": 128, "qpsPerNode": 10000, "retentionYears": 1, "replicationFactor": 3, "storageTB": 2400 } },
+    { "id": "bus", "kind": "event-stream", "label": "Kafka: messages\nkeyed by chat_id", "capacity": { "replicas": 3, "shards": 64, "qpsPerNode": 10000 } },
+    { "id": "deliver", "kind": "worker", "label": "Delivery workers", "capacity": { "replicas": 40, "qpsPerNode": 5000, "fanout": 2 } },
+    { "id": "groups", "kind": "sql-database", "label": "Groups + members\n(MySQL)", "capacity": { "replicas": 4, "shards": 8, "qpsPerNode": 5000 } },
+    { "id": "registry", "kind": "cache", "label": "Session registry\n(Redis: user → socket)", "capacity": { "replicas": 2, "shards": 8, "qpsPerNode": 100000, "hitRatio": 0.99, "ttlSec": 60 } },
+    { "id": "push", "kind": "notifications", "label": "APNs / FCM" },
+    { "id": "media", "kind": "object-storage", "label": "Media (S3)" },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (media)" },
+    { "id": "poll", "kind": "service", "label": "HTTP polling every 2 s", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- WebSocket over polling: push,\n  no empty requests\n- Cassandra by (chat, day):\n  ordered appends, wide rows\n- Kafka keyed by chat: order\n  per chat; clients dedupe ids\n- registry TTL = heartbeat" }
+  ],
+  "edges": [
+    { "from": "client", "to": "lb", "label": "WSS" },
+    { "from": "lb", "to": "ws" },
+    { "from": "ws", "to": "msg", "carries": "writes" },
+    { "from": "ws", "to": "registry", "label": "heartbeat", "carries": "writes" },
+    { "from": "msg", "to": "store" },
+    { "from": "msg", "to": "bus", "kind": "async", "carries": "writes" },
+    { "from": "bus", "to": "deliver" },
+    { "from": "deliver", "to": "groups", "carries": "lookups" },
+    { "from": "deliver", "to": "registry", "label": "where?", "carries": "lookups" },
+    { "from": "deliver", "to": "ws", "kind": "async", "carries": "lookups" },
+    { "from": "deliver", "to": "push", "kind": "async" },
+    { "from": "client", "to": "media", "label": "pre-signed PUT", "carries": "writes" },
+    { "from": "client", "to": "cdn", "carries": "reads" },
+    { "from": "cdn", "to": "media" }
+  ],
+  "frames": [
+    { "id": "f-connect", "label": "1 · Connect: sockets, media via CDN", "contains": ["client", "lb", "ws", "media", "cdn"] },
+    { "id": "f-send", "label": "2 · + Send and persist", "contains": ["client", "lb", "ws", "msg", "store", "bus", "media", "cdn"] },
+    { "id": "f-deliver", "label": "3 · + Deliver: online socket or push", "contains": ["client", "lb", "ws", "msg", "store", "bus", "deliver", "groups", "registry", "push", "media", "cdn"] },
+    { "id": "f-all", "label": "4 · Whole design", "contains": ["req", "client", "lb", "ws", "msg", "store", "bus", "deliver", "groups", "registry", "push", "media", "cdn", "poll", "trade"] }
+  ]
+}

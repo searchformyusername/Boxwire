@@ -1,0 +1,32 @@
+---
+title: Checkout flow
+---
+%% A Mermaid flowchart that exercises the supported subset and a few things that aren't.
+flowchart LR
+    user([Shopper]) -->|browse| web[Web storefront]
+    web --> api{{API gateway}}
+    api --> cart(Cart service) & orders[Order service]
+    orders -.->|order placed| bus[(Event bus)]
+    bus -.-> mailer>Email sender]
+    orders ==> db[(Orders DB)]
+    cart -- reads and writes --> cache[(Session cache)]
+    api --- auth[/Auth check/]
+    subgraph core [Core services]
+        cart
+        orders
+    end
+    subgraph data ["Data"]
+        db
+        subgraph hot [Hot data]
+            cache
+        end
+    end
+    click web "https://example.com" "Open"
+    classDef svc fill:#eef,stroke:#88f
+    class cart,orders svc
+    style db fill:#ffe
+    linkStyle 0 stroke:#f00
+    api --x auth2[Legacy auth]:::old
+    db ~~~ cache
+    orders --> orders
+    orders e5@--> api

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://gitreset.dev/products/boxwire/schema.json",
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Parking lot (LLD)",
+  "layout": "auto",
+  "direction": "TB",
+  "nodes": [
+    { "id": "lot", "kind": "class", "name": "ParkingLot", "attributes": ["- levels: List<Level>"], "methods": ["+ park(v: Vehicle): Ticket", "+ leave(t: Ticket): Money"] },
+    { "id": "level", "kind": "class", "name": "Level", "attributes": ["- floor: int", "- spots: List<Spot>"], "methods": ["+ findSpot(v: Vehicle): Spot"] },
+    { "id": "spot", "kind": "abstract-class", "name": "Spot", "attributes": ["# id: String", "# free: boolean"], "methods": ["+ fits(v: Vehicle): boolean {abstract}"] },
+    { "id": "compact", "kind": "class", "name": "CompactSpot", "methods": ["+ fits(v: Vehicle): boolean"] },
+    { "id": "large", "kind": "class", "name": "LargeSpot", "methods": ["+ fits(v: Vehicle): boolean"] },
+    { "id": "pricing", "kind": "interface", "name": "PricingStrategy", "methods": ["+ price(t: Ticket): Money"] },
+    { "id": "hourly", "kind": "class", "name": "HourlyPricing", "methods": ["+ price(t: Ticket): Money"] },
+    { "id": "size", "kind": "enum", "name": "SpotSize", "values": ["COMPACT", "LARGE", "ACCESSIBLE"] },
+    { "id": "note", "kind": "note", "label": "Spot subclasses only decide fit; pricing is swappable at runtime." }
+  ],
+  "edges": [
+    { "from": "lot", "to": "level", "kind": "composition", "label": "1..*" },
+    { "from": "level", "to": "spot", "kind": "composition", "label": "1..*" },
+    { "from": "compact", "to": "spot", "kind": "inheritance" },
+    { "from": "large", "to": "spot", "kind": "inheritance" },
+    { "from": "lot", "to": "pricing", "kind": "association" },
+    { "from": "hourly", "to": "pricing", "kind": "realization" },
+    { "from": "spot", "to": "size", "kind": "dependency" }
+  ]
+}

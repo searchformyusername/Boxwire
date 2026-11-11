@@ -1,0 +1,22 @@
+// Checkout, as the agent proposes it: payments added, a shortcut to the DB.
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Checkout",
+  "nodes": [
+    { "id": "web", "kind": "web-client", "label": "Web" },
+    { "id": "api", "kind": "api-gateway", "label": "API" },
+    /* orders owns the order lifecycle */
+    { "id": "orders", "kind": "service", "label": "Order service" },
+    { "id": "pay", "kind": "payments", "label": "Payments" },
+    { "id": "db", "kind": "sql-database", "label": "Orders DB" }
+  ],
+  "edges": [
+    { "from": "web", "to": "api" },
+    { "from": "api", "to": "orders" },
+    { "from": "orders", "to": "db" }, // writes only
+    { "id": "e-pay", "from": "orders", "to": "pay" },
+    { "id": "e-back", "from": "pay", "to": "orders" },
+    { "id": "e-short", "from": "web", "to": "db" }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Ticket booking (Ticketmaster-style)",
+  "direction": "LR",
+  "nodes": [
+    { "id": "req", "kind": "note", "label": "Requirements\n- browse events + seat map\n- hold seats 10 min, then pay\n- never double-sell a seat\n- on-sale spikes: 10× normal\n- 20M DAU: 30 reads, 0.5 books\n- 69k reads/s, 1.2k holds/s\n- 10M bookings/day × 1 KB\n  ≈ 22 TB over 2 y at RF 3" },
+    { "id": "client", "kind": "web-client", "label": "Fans (web, app)", "capacity": { "dau": 20000000, "writesPerUser": 0.5, "readsPerUser": 30, "peak": 10, "writeKB": 1, "readKB": 5 } },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (pages, seat maps)", "capacity": { "hitRatio": 0.6 } },
+    { "id": "room", "kind": "rate-limiter", "label": "Virtual waiting room\n(admits N users/s)", "capacity": { "replicas": 8, "qpsPerNode": 10000 } },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway (OAuth)", "capacity": { "replicas": 6, "qpsPerNode": 20000, "auth": true } },
+    { "id": "event", "kind": "service", "label": "Event + seat-map API", "capacity": { "replicas": 20, "qpsPerNode": 5000 } },
+    { "id": "seatcache", "kind": "cache", "label": "Seat-map cache (Redis)", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 100000, "hitRatio": 0.95, "ttlSec": 5 } },
+    { "id": "events", "kind": "sql-database", "label": "Events + venues\n(Postgres)", "capacity": { "replicas": 3, "shards": 2, "qpsPerNode": 5000 } },
+    { "id": "searchApi", "kind": "service", "label": "Search API", "capacity": { "replicas": 4, "qpsPerNode": 3000 } },
+    { "id": "search", "kind": "search-index", "label": "Event search\n(Elasticsearch)", "capacity": { "replicas": 2, "shards": 3, "qpsPerNode": 2000 } },
+    { "id": "booking", "kind": "service", "label": "Booking service", "capacity": { "replicas": 4, "qpsPerNode": 1000 } },
+    { "id": "holds", "kind": "cache", "label": "Seat holds (Redis)\nSET NX, 10 min TTL", "capacity": { "replicas": 2, "shards": 2, "qpsPerNode": 100000, "hitRatio": 0.9, "ttlSec": 600 } },
+    { "id": "bookings", "kind": "sql-database", "label": "Bookings (Postgres)\nby event_id", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 3000, "retentionYears": 2, "replicationFactor": 3 } },
+    { "id": "psp", "kind": "payments", "label": "Payments (Stripe)" },
+    { "id": "confirmed", "kind": "event-stream", "label": "Kafka: booking.confirmed", "capacity": { "replicas": 3, "shards": 4, "qpsPerNode": 10000 } },
+    { "id": "issuer", "kind": "worker", "label": "Ticket issuer (QR)", "capacity": { "replicas": 3, "qpsPerNode": 1000 } },
+    { "id": "email", "kind": "email-sms", "label": "Email (SES)" },
+    { "id": "tickets", "kind": "object-storage", "label": "Ticket PDFs (S3)" },
+    { "id": "lock", "kind": "sql-database", "label": "FOR UPDATE on whole event", "crossed": true },
+    { "id": "trade", "kind": "note", "label": "Trade-offs\n- waiting room admits N/s:\n  booking never sees the herd\n- holds: Redis SET NX + TTL;\n  the Postgres row is truth\n- seat map cached 5 s: a stale\n  seat fails at hold, safely\n- shard by event: hot event =\n  hot shard; holds absorb it" }
+  ],
+  "edges": [
+    { "from": "client", "to": "cdn", "label": "HTTPS" },
+    { "from": "cdn", "to": "room" },
+    { "from": "room", "to": "gw", "label": "admitted" },
+    { "from": "gw", "to": "event", "carries": "reads", "share": 0.8 },
+    { "from": "gw", "to": "searchApi", "label": "search", "carries": "reads", "share": 0.2 },
+    { "from": "event", "to": "seatcache" },
+    { "from": "event", "to": "events" },
+    { "from": "gw", "to": "booking", "carries": "writes" },
+    { "from": "searchApi", "to": "search" },
+    { "from": "booking", "to": "holds" },
+    { "from": "booking", "to": "bookings", "label": "UPDATE … WHERE free" },
+    { "from": "booking", "to": "seatcache", "carries": "writes" },
+    { "from": "booking", "to": "psp" },
+    { "from": "booking", "to": "confirmed", "kind": "async" },
+    { "from": "confirmed", "to": "issuer" },
+    { "from": "issuer", "to": "tickets" },
+    { "from": "issuer", "to": "email" }
+  ],
+  "frames": [
+    { "id": "f-admit", "label": "1 · Admit the herd: CDN, waiting room", "contains": ["client", "cdn", "room", "gw"], "padding": 20 },
+    { "id": "f-book", "label": "2 · + Browse, hold, book (no double-sell)", "contains": ["client", "cdn", "room", "gw", "event", "seatcache", "events", "searchApi", "search", "booking", "holds", "bookings", "psp", "confirmed"] },
+    { "id": "f-issue", "label": "3 · + Issue tickets asynchronously", "contains": ["client", "cdn", "room", "gw", "event", "seatcache", "events", "searchApi", "search", "booking", "holds", "bookings", "psp", "confirmed", "issuer", "email", "tickets"] },
+    { "id": "f-all", "label": "4 · Whole design", "contains": ["req", "client", "cdn", "room", "gw", "event", "seatcache", "events", "searchApi", "search", "booking", "holds", "bookings", "psp", "confirmed", "issuer", "email", "tickets", "lock", "trade"] }
+  ]
+}

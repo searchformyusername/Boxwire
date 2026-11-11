@@ -1,0 +1,1321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitreset.dev/products/boxwire/schema.json",
+  "title": "Boxwire diagram (authoring format v1)",
+  "description": "A diagram an LLM or a person can write by hand. Import it in Boxwire (Boards menu → Open file, or paste it onto the canvas). Guide: https://gitreset.dev/products/boxwire/llm.md. This schema is the strict single-object check; Boxwire additionally checks references, unique ids, content size and element totals, and treats unknown fields as warnings. Source files may also contain // and /* */ comments and trailing commas (JSONC); this schema describes the value once those are removed.",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "nodes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "format": {
+      "const": "boxwire-diagram"
+    },
+    "version": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "manual"
+      ],
+      "default": "auto",
+      "description": "auto: Boxwire places nodes (no x/y allowed). manual: every node needs x and y."
+    },
+    "direction": {
+      "enum": [
+        "LR",
+        "TB"
+      ],
+      "default": "LR",
+      "description": "Flow direction for auto layout."
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1500,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "zones": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/zone"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 3000,
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "strokes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/stroke"
+      },
+      "description": "Freehand marks; manual layout only."
+    },
+    "frames": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/frame"
+      },
+      "description": "Presentation slides, in order. Each is drawn around its members."
+    },
+    "positions": {
+      "type": "object",
+      "maxProperties": 1500,
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/position"
+      },
+      "description": "Per-view layout, kept apart from the model: node id → top-left position (and optional size). Auto layout: listed nodes are pinned there after layout. Manual layout: replaces the node's own x/y (the node may then omit them). Every key must be a node id."
+    }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "layout": {
+        "const": "manual"
+      }
+    },
+    "required": [
+      "layout"
+    ]
+  },
+  "then": {
+    "type": "object",
+    "if": {
+      "type": "object",
+      "required": [
+        "positions"
+      ]
+    },
+    "else": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "else": {
+    "type": "object",
+    "properties": {
+      "nodes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "x"
+                ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "y"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "edges": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "strokes": {
+        "type": "array",
+        "maxItems": 0
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^(?!(?:constructor|hasOwnProperty|isPrototypeOf|propertyIsEnumerable|toLocaleString|toString|valueOf)$)[A-Za-z][A-Za-z0-9_-]{0,47}$",
+      "description": "Unique across nodes, zones, edges and strokes. Object.prototype names such as \"constructor\" are reserved."
+    },
+    "nodeKind": {
+      "type": "string",
+      "enum": [
+        "web-client",
+        "mobile-app",
+        "user",
+        "dns",
+        "cdn",
+        "load-balancer",
+        "api-gateway",
+        "rate-limiter",
+        "auth-service",
+        "service",
+        "worker",
+        "serverless-function",
+        "scheduler",
+        "llm-inference",
+        "agent",
+        "container",
+        "sql-database",
+        "nosql-store",
+        "cache",
+        "object-storage",
+        "search-index",
+        "vector-db",
+        "data-warehouse",
+        "message-queue",
+        "event-stream",
+        "pub-sub",
+        "notifications",
+        "email-sms",
+        "webhook",
+        "monitoring",
+        "logs",
+        "analytics",
+        "external-api",
+        "payments",
+        "config",
+        "class",
+        "interface",
+        "abstract-class",
+        "enum",
+        "table",
+        "note",
+        "box",
+        "ellipse",
+        "decision",
+        "hexagon",
+        "cylinder",
+        "queue-shape",
+        "cloud",
+        "text"
+      ]
+    },
+    "relation": {
+      "type": "string",
+      "enum": [
+        "flow",
+        "async",
+        "two-way",
+        "dependency",
+        "association",
+        "inheritance",
+        "realization",
+        "aggregation",
+        "composition",
+        "one-to-one",
+        "one-to-many",
+        "zero-or-many",
+        "many-to-many",
+        "line"
+      ]
+    },
+    "color": {
+      "type": "string",
+      "enum": [
+        "ink",
+        "slate",
+        "red",
+        "orange",
+        "amber",
+        "green",
+        "teal",
+        "blue",
+        "violet",
+        "pink"
+      ],
+      "description": "Colour token; resolved per light/dark theme."
+    },
+    "icon": {
+      "type": "string",
+      "enum": [
+        "activity",
+        "archive",
+        "bell",
+        "bot",
+        "box",
+        "brain",
+        "chart",
+        "clock",
+        "cloud",
+        "cog",
+        "container",
+        "cpu",
+        "card",
+        "database",
+        "databaseZap",
+        "door",
+        "earth",
+        "file",
+        "gauge",
+        "globe",
+        "drive",
+        "image",
+        "key",
+        "layers",
+        "lock",
+        "mail",
+        "message",
+        "monitor",
+        "network",
+        "radio",
+        "router",
+        "search",
+        "server",
+        "shield",
+        "phone",
+        "sparkles",
+        "split",
+        "timer",
+        "user",
+        "users",
+        "webhook",
+        "workflow",
+        "zap"
+      ]
+    },
+    "fill": {
+      "type": "string",
+      "enum": [
+        "paper",
+        "tint",
+        "solid",
+        "none"
+      ]
+    },
+    "dash": {
+      "type": "string",
+      "enum": [
+        "solid",
+        "dashed",
+        "dotted"
+      ]
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ]
+    },
+    "route": {
+      "type": "string",
+      "enum": [
+        "ortho",
+        "curve",
+        "straight"
+      ]
+    },
+    "head": {
+      "type": "string",
+      "enum": [
+        "none",
+        "arrow",
+        "open",
+        "triangle",
+        "diamond",
+        "diamondFilled",
+        "circle",
+        "one",
+        "many",
+        "oneMany",
+        "zeroMany"
+      ]
+    },
+    "columnKey": {
+      "type": "string",
+      "enum": [
+        "PK",
+        "FK",
+        "UQ",
+        "PK FK"
+      ]
+    },
+    "textSize": {
+      "type": "string",
+      "enum": [
+        "s",
+        "m",
+        "l",
+        "xl"
+      ]
+    },
+    "point": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        "y": {
+          "type": "number",
+          "minimum": -100000,
+          "maximum": 100000
+        }
+      },
+      "additionalProperties": false
+    },
+    "position": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        "y": {
+          "type": "number",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        "w": {
+          "type": "number",
+          "minimum": 16,
+          "maximum": 4000
+        },
+        "h": {
+          "type": "number",
+          "minimum": 16,
+          "maximum": 4000
+        }
+      },
+      "additionalProperties": false
+    },
+    "trust": {
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "restricted",
+        "sensitive"
+      ],
+      "description": "Declared trust boundary, from least to most protected."
+    },
+    "meta": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(?!(?:constructor|hasOwnProperty|isPrototypeOf|propertyIsEnumerable|toLocaleString|toString|valueOf)$)[a-z][a-zA-Z0-9_-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "description": "Free-form declared metadata, such as { \"owner\": \"payments-team\", \"data\": \"pii\" }. Read by review policies; never inferred from labels."
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "string",
+        "maxLength": 200,
+        "pattern": "^(?!\\s*-{2,}\\s*$)[^\\n]*$"
+      }
+    },
+    "column": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^\\s*\\S{1,80}\\s+\\S{1,80}(?:\\s+(?:PK|FK|UQ|PK FK))?\\s*$",
+          "description": "Like \"id uuid PK\"."
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^\\S+$"
+            },
+            "type": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^\\S+$"
+            },
+            "key": {
+              "$ref": "#/$defs/columnKey"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "$ref": "#/$defs/nodeKind"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Text shown on the node. Not used by class, interface, abstract-class, enum or table."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^(?!\\s*-{2,}\\s*$)(?=[^\\n]*\\S)[^\\n]*$",
+          "description": "UML or table name."
+        },
+        "stereotype": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^(?!\\s*-{2,}\\s*$)[^\\n]*$"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "attributes": {
+          "$ref": "#/$defs/lines"
+        },
+        "methods": {
+          "$ref": "#/$defs/lines"
+        },
+        "values": {
+          "$ref": "#/$defs/lines",
+          "description": "Enum constants (kind \"enum\" only)."
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "x": {
+          "type": "number",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        "y": {
+          "type": "number",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        "w": {
+          "type": "number",
+          "minimum": 16,
+          "maximum": 4000
+        },
+        "h": {
+          "type": "number",
+          "minimum": 16,
+          "maximum": 4000
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Auto layout only: the earliest column (LR) or row (TB) this node may sit in, 0 being the first. Use it for nodes nothing points at, such as a batch job, that would otherwise land in the first column."
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "fill": {
+          "$ref": "#/$defs/fill"
+        },
+        "dash": {
+          "$ref": "#/$defs/dash"
+        },
+        "crossed": {
+          "type": "boolean",
+          "description": "Draw a red cross: a rejected option."
+        },
+        "icon": {
+          "$ref": "#/$defs/icon",
+          "description": "Component kinds only."
+        },
+        "textSize": {
+          "$ref": "#/$defs/textSize"
+        },
+        "font": {
+          "enum": [
+            "sans",
+            "mono"
+          ]
+        },
+        "align": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "capacity": {
+          "$ref": "#/$defs/capacity"
+        },
+        "meta": {
+          "$ref": "#/$defs/meta"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "class",
+                  "interface",
+                  "abstract-class",
+                  "enum"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "label"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "columns"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "else": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "stereotype"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "abstract"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "attributes"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "methods"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "values"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "enum"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "attributes"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "methods"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "values"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "abstract-class"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "abstract": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "table"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "label"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "name",
+              "columns"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^\\S+$"
+              }
+            }
+          },
+          "else": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "columns"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "not": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "class",
+                    "interface",
+                    "abstract-class",
+                    "enum",
+                    "table"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            }
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "name"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "text"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "pattern": "\\S"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "not": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "web-client",
+                    "mobile-app",
+                    "dns",
+                    "cdn",
+                    "load-balancer",
+                    "api-gateway",
+                    "rate-limiter",
+                    "auth-service",
+                    "service",
+                    "worker",
+                    "serverless-function",
+                    "scheduler",
+                    "llm-inference",
+                    "agent",
+                    "container",
+                    "cache",
+                    "object-storage",
+                    "search-index",
+                    "pub-sub",
+                    "notifications",
+                    "email-sms",
+                    "webhook",
+                    "monitoring",
+                    "logs",
+                    "analytics",
+                    "payments",
+                    "config"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            }
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "icon"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "zone": {
+      "type": "object",
+      "required": [
+        "id",
+        "contains"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "contains": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Node ids; the zone is drawn around them."
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "trust": {
+          "$ref": "#/$defs/trust"
+        },
+        "padding": {
+          "type": "number",
+          "minimum": 8,
+          "maximum": 200,
+          "default": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "from": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Node or zone id."
+            },
+            {
+              "$ref": "#/$defs/point"
+            }
+          ]
+        },
+        "to": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Node or zone id."
+            },
+            {
+              "$ref": "#/$defs/point"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/relation",
+          "default": "flow"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "fromSide": {
+          "$ref": "#/$defs/side"
+        },
+        "toSide": {
+          "$ref": "#/$defs/side"
+        },
+        "route": {
+          "$ref": "#/$defs/route",
+          "default": "ortho"
+        },
+        "head": {
+          "$ref": "#/$defs/head"
+        },
+        "tail": {
+          "$ref": "#/$defs/head"
+        },
+        "dash": {
+          "$ref": "#/$defs/dash"
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 8
+        },
+        "carries": {
+          "enum": [
+            "reads",
+            "writes",
+            "lookups",
+            "misses"
+          ],
+          "description": "For capacity: only reads, only writes, or \"lookups\" (one read per request the source handles). Omit for everything the source sends on."
+        },
+        "share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "For capacity: the fraction of the source's output this edge carries (default 1)."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "fromSide"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "object"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "toSide"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "capacity": {
+      "type": "object",
+      "description": "Declared capacity facts and declarations read by Boxwire's review (lint, capacity, rubric). Undeclared means unknown. See \"Capacity\" in the guide.",
+      "properties": {
+        "dau": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000000000,
+          "description": "Daily active users (users)"
+        },
+        "writesPerUser": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Writes per user per day (writes/user/day)"
+        },
+        "readsPerUser": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000000,
+          "description": "Reads per user per day (reads/user/day)"
+        },
+        "writesPerDay": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000000000000,
+          "description": "Writes per day (writes/day)"
+        },
+        "writesPerMonth": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000000,
+          "description": "Writes per month (30 days) (writes/30 days)"
+        },
+        "readWrite": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Read:write ratio (reads per write)"
+        },
+        "writeQps": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000000000,
+          "description": "Write rate (writes/s)"
+        },
+        "readQps": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000000000,
+          "description": "Read rate (reads/s)"
+        },
+        "peak": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Peak multiplier (× average)"
+        },
+        "writeKB": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000000,
+          "description": "Write payload (KB/write)"
+        },
+        "readKB": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000000,
+          "description": "Read response (KB/read)"
+        },
+        "qpsPerNode": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Rated throughput (req/s per instance)"
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Replicas (instances)"
+        },
+        "shards": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Shards (partitions)"
+        },
+        "hitRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Cache hit ratio (0–1)"
+        },
+        "ttlSec": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Cache TTL (s (0 = never expires))"
+        },
+        "fanout": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000000,
+          "description": "Fan-out (× per input)"
+        },
+        "retentionYears": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Retention (years)"
+        },
+        "replicationFactor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Replication factor (copies)"
+        },
+        "storageTB": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "description": "Storage capacity (TB)"
+        },
+        "managed": {
+          "type": "boolean",
+          "description": "Managed, highly available service"
+        },
+        "auth": {
+          "type": "boolean",
+          "description": "Authenticates callers"
+        },
+        "public": {
+          "type": "boolean",
+          "description": "Deliberately public (anonymous)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object",
+      "required": [
+        "id",
+        "contains"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "contains": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Node or zone ids; the frame is drawn around them."
+        },
+        "padding": {
+          "type": "number",
+          "minimum": 8,
+          "maximum": 400,
+          "default": 40
+        }
+      },
+      "additionalProperties": false
+    },
+    "stroke": {
+      "type": "object",
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 5000,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "highlighter": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

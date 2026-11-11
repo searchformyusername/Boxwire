@@ -1,0 +1,57 @@
+{
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "Storefront",
+  "direction": "LR",
+  "nodes": [
+    { "id": "web", "kind": "web-client", "label": "Web storefront" },
+    { "id": "mobile", "kind": "mobile-app", "label": "Mobile app" },
+    { "id": "cdn", "kind": "cdn", "label": "CDN (static assets)" },
+    { "id": "gw", "kind": "api-gateway", "label": "API gateway", "capacity": { "replicas": 3, "auth": true }, "meta": { "owner": "platform" } },
+    { "id": "auth", "kind": "auth-service", "label": "Auth service", "capacity": { "replicas": 2 }, "meta": { "owner": "identity" } },
+    { "id": "catalog", "kind": "service", "label": "Catalog service", "capacity": { "replicas": 2 }, "meta": { "owner": "catalog" } },
+    { "id": "search", "kind": "search-index", "label": "Search index", "meta": { "owner": "catalog" } },
+    { "id": "cache", "kind": "cache", "label": "Catalog cache", "capacity": { "ttlSec": 300 }, "meta": { "owner": "catalog" } },
+    { "id": "orders", "kind": "service", "label": "Order service", "capacity": { "replicas": 3 }, "meta": { "owner": "checkout" } },
+    { "id": "inventory", "kind": "service", "label": "Inventory service", "capacity": { "replicas": 2 }, "meta": { "owner": "fulfilment" } },
+    { "id": "payments", "kind": "service", "label": "Payment service", "capacity": { "replicas": 2 }, "meta": { "owner": "checkout" } },
+    { "id": "psp", "kind": "payments", "label": "PSP (Stripe)" },
+    { "id": "ordersdb", "kind": "sql-database", "label": "Orders DB", "capacity": { "replicas": 3 }, "meta": { "owner": "checkout" } },
+    { "id": "events", "kind": "event-stream", "label": "Order events" },
+    { "id": "notifier", "kind": "worker", "label": "Notifier", "capacity": { "replicas": 2 }, "meta": { "owner": "growth" } },
+    { "id": "email", "kind": "email-sms", "label": "Email / SMS" },
+    { "id": "profile", "kind": "service", "label": "Profile service", "capacity": { "replicas": 2 }, "meta": { "owner": "identity" } },
+    { "id": "users", "kind": "sql-database", "label": "Customer DB", "capacity": { "replicas": 3 }, "meta": { "owner": "identity", "data": "pii" } }
+  ],
+  "edges": [
+    { "from": "web", "to": "cdn", "carries": "reads" },
+    { "from": "web", "to": "gw" },
+    { "from": "mobile", "to": "gw" },
+    { "id": "gw-auth", "from": "gw", "to": "auth" },
+    { "from": "gw", "to": "catalog" },
+    { "from": "gw", "to": "orders" },
+    { "from": "gw", "to": "profile" },
+    { "from": "catalog", "to": "cache" },
+    { "from": "catalog", "to": "search", "carries": "reads" },
+    { "id": "orders-inventory", "from": "orders", "to": "inventory", "label": "reserve stock" },
+    { "from": "orders", "to": "payments" },
+    { "from": "payments", "to": "psp", "label": "charge" },
+    { "from": "orders", "to": "ordersdb" },
+    { "from": "orders", "to": "events", "kind": "async" },
+    { "from": "events", "to": "notifier" },
+    { "from": "notifier", "to": "email" },
+    { "from": "notifier", "to": "profile", "carries": "reads" },
+    { "from": "profile", "to": "users" }
+  ],
+  "zones": [
+    { "id": "public", "label": "Public internet", "trust": "public", "contains": ["web", "mobile", "cdn"] },
+    { "id": "core", "label": "Core services", "trust": "internal", "contains": ["gw", "auth", "catalog", "search", "cache", "orders", "inventory", "payments", "ordersdb", "events", "notifier"] },
+    { "id": "pii", "label": "Customer data", "trust": "sensitive", "contains": ["profile", "users"] }
+  ],
+  "frames": [
+    { "id": "f-checkout", "label": "Checkout path", "contains": ["gw", "orders", "payments", "psp"] }
+  ],
+  "positions": {
+    "gw": { "x": 420, "y": 120 }
+  }
+}

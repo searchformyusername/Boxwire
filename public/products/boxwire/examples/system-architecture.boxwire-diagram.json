@@ -1,0 +1,34 @@
+{
+  "$schema": "https://gitreset.dev/products/boxwire/schema.json",
+  "format": "boxwire-diagram",
+  "version": 1,
+  "name": "URL shortener",
+  "layout": "auto",
+  "direction": "LR",
+  "nodes": [
+    { "id": "client", "kind": "web-client", "label": "Client" },
+    { "id": "lb", "kind": "load-balancer" },
+    { "id": "api", "kind": "service", "label": "Shortener API" },
+    { "id": "kgs", "kind": "service", "label": "Key generator", "icon": "key", "color": "teal" },
+    { "id": "cache", "kind": "cache", "label": "Redis read-through cache" },
+    { "id": "db", "kind": "sql-database", "label": "URL store" },
+    { "id": "memcached", "kind": "cache", "label": "Memcached", "crossed": true },
+    { "id": "clicks", "kind": "event-stream", "label": "Click events" },
+    { "id": "worker", "kind": "worker", "label": "Analytics worker" },
+    { "id": "warehouse", "kind": "data-warehouse" }
+  ],
+  "zones": [
+    { "id": "region", "label": "us-east-1", "contains": ["api", "kgs", "cache", "memcached", "db"] }
+  ],
+  "edges": [
+    { "from": "client", "to": "lb", "label": "GET /abc123" },
+    { "from": "lb", "to": "api" },
+    { "from": "api", "to": "cache" },
+    { "from": "api", "to": "memcached", "kind": "line", "dash": "dotted" },
+    { "from": "api", "to": "db" },
+    { "from": "api", "to": "kgs", "kind": "async", "label": "claim IDs" },
+    { "from": "api", "to": "clicks", "kind": "async" },
+    { "from": "clicks", "to": "worker" },
+    { "from": "worker", "to": "warehouse" }
+  ]
+}
